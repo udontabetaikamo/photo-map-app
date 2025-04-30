@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>位置情報付き写真表示アプリ（クラスタリング改良版）</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+        #app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        #map-container {
+            flex: 3;
+            width: 100%;
+            position: relative;
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+        #photo-gallery {
+            flex: 1;
+            width: 100%;
+            background-color: #f5f5f5;
+            overflow-x: auto;
+            white-space: nowrap;
+            padding: 10px 0;
+            display: flex;
+            align-items: center;
+        }
+        .photo-container {
+            display: inline-block;
+            margin: 0 10px;
+            position: relative;
+        }
+        .photo {
+            height: 160px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .photo:hover {
+            transform: scale(1.05);
+            border-color: #007bff;
+        }
+        .photo-date {
+            position: absolute;
+            bottom: 5px;
+            left: 0;
+            right: 0;
+            background-color: rgba(0, 0, 0, 0.6);
+            color: white;
+            font-size: 12px;
+            padding: 2px 5px;
+            text-align: center;
+            border-radius: 0 0 4px 4px;
+        }
+        .no-photos {
+            text-align: center;
+            width: 100%;
+            font-style: italic;
+            color: #666;
+        }
+        .location-marker {
+            color: red;
+            font-weight: bold;
+        }
+        .control-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background-color: white;
+            padding: 10px;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+            max-width: 300px;
+        }
+        .control-panel h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+        }
+        .file-input-wrapper input[type=file] {
+            position: absolute;
+            left: 0;
+            top: 0;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+        .btn {
+            display: inline-block;
+            background-color: #4CAF50;
+            color: white;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-bottom: 5px;
+            text-align: center;
+            text-decoration: none;
+        }
+        .btn:hover {
+            background-color: #45a049;
+        }
+        .btn-secondary {
+            background-color: #2196F3;
+        }
+        .btn-secondary:hover {
+            background-color: #0b7dda;
+        }
+        .status-message {
+            margin-top: 10px;
+            padding: 5px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .status-success {
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+        .status-error {
+            background-color: #f2dede;
+            color: #a94442;
+        }
+        .cluster-marker {
+            background-color: transparent !important;
+            border: none !important;
+        }
+        .photo-preview-modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+        }
+        .photo-preview-content {
+            position: relative;
+            margin: auto;
+            padding: 0;
+            width: 80%;
+            max-width: 1200px;
+            height: 80%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .photo-preview-close {
+            color: white;
+            position: absolute;
+            top: 10px;
+            right: 25px;
+            font-size: 35px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .photo-preview-image {
+            max-width: 100%;
+            max-height: 80%;
+            object-fit: contain;
+        }
+        .photo-preview-info {
+            color: white;
+            text-align: center;
+            margin-top: 20px;
+            width: 100%;
+        }
+        .image-upload-section {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #ddd;
+        }
+        /* 設定パネル追加 */
+        .settings-panel {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #ddd;
+        }
+        .settings-panel h4 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+        }
+        .form-group {
+            margin-bottom: 8px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            margin-bottom: 3px;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+        .settings-apply {
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div id="app-container">
+        <div id="map-container">
+            <div id="map"></div>
+            <div class="control-panel">
+                <h3>写真データベース</h3>
+                <div class="file-input-wrapper">
+                    <button class="btn">JSONファイルを選択</button>
+                    <input type="file" id="json-file-input" accept=".json" />
+                </div>
+                <div class="status-message" id="status-message"></div>
+                <div id="database-info" style="margin-top: 10px; font-size: 12px;"></div>
+                
+                <div class="image-upload-section">
+                    <div class="file-input-wrapper">
+                        <button class="btn btn-secondary">画像フォルダを選択</button>
+                        <input type="file" id="image-folder-input" webkitdirectory directory multiple />
+                    </div>
+                    <div class="status-message" id="image-status"></div>
+                </div>
+                
+                <!-- 設定パネル -->
+                <div class="settings-panel">
+                    <h4>クラスタリング設定</h4>
+                    <div class="form-group">
+                        <label for="clustering-radius">クラスタリング半径 (km):</label>
+                        <input type="number" id="clustering-radius" min="0.01" max="1" step="0.01" value="0.2">
+                    </div>
+                    <button class="btn btn-secondary settings-apply" id="apply-settings">設定を適用</button>
+                </div>
+            </div>
+        </div>
+        <div id="photo-gallery">
+            <div class="no-photos">位置をクリックして写真を表示 または JSONデータベースをロード</div>
+        </div>
+    </div>
+
+    <div id="photo-preview-modal" class="photo-preview-modal">
+        <span class="photo-preview-close" id="photo-preview-close">&times;</span>
+        <div class="photo-preview-content">
+            <img id="photo-preview-image" class="photo-preview-image" src="" alt="写真プレビュー">
+            <div class="photo-preview-info" id="photo-preview-info"></div>
+        </div>
+    </div>
+
+    <script>
+        // 初期設定
+        const kitaSenju = [35.749, 139.805]; // 北千住の座標
+        let map;
+        let markers = {};
+        let photoLocations = {}; // 位置をキーとする写真データのマップ
+        let photoData = []; // データベースから読み込んだ写真データ
+        let currentLocationKey = null; // 現在選択されている位置
+        let imageFiles = {}; // 画像ファイルの保存用オブジェクト
+        
+        // クラスタリング設定
+        let CLUSTERING_RADIUS = 0.2; // デフォルト: 200メートル (0.2km)
+
+        // DOM要素
+        const jsonFileInput = document.getElementById('json-file-input');
+        const imageFolderInput = document.getElementById('image-folder-input');
+        const statusMessage = document.getElementById('status-message');
+        const imageStatus = document.getElementById('image-status');
+        const databaseInfo = document.getElementById('database-info');
+        const photoGallery = document.getElementById('photo-gallery');
+        const photoPreviewModal = document.getElementById('photo-preview-modal');
+        const photoPreviewImage = document.getElementById('photo-preview-image');
+        const photoPreviewInfo = document.getElementById('photo-preview-info');
+        const photoPreviewClose = document.getElementById('photo-preview-close');
+        const clusteringRadiusInput = document.getElementById('clustering-radius');
+        const applySettingsButton = document.getElementById('apply-settings');
+
+        // マップの初期化
+        function initMap() {
+            map = L.map('map').setView(kitaSenju, 15);
+
+            // 国土地理院タイルの追加
+            L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
+                attribution: "<a href='https://maps.gsi.go.jp/development/ichiran.html' target='_blank'>地理院タイル</a>",
+                maxZoom: 18
+            }).addTo(map);
+
+            // マップクリックイベントの追加
+            map.on('click', function(e) {
+                handleMapClick(e.latlng.lat, e.latlng.lng);
+            });
+        }
+
+        // マップクリック時の処理
+        function handleMapClick(clickedLat, clickedLng) {
+            // クリックされた位置の近くにあるポイントを探す（クラスタリング半径と同じ値を使用）
+            let nearestPoint = null;
+            let minDistance = Infinity;
+            const CLICK_RADIUS = CLUSTERING_RADIUS; // クラスタリング半径と同じ値を使用
+            
+            for (const position in photoLocations) {
+                const [lat, lng] = position.split(',').map(Number);
+                const distance = getDistance(clickedLat, clickedLng, lat, lng);
+                
+                // クラスタリング半径以内のポイントを探す
+                if (distance < CLICK_RADIUS && distance < minDistance) {
+                    minDistance = distance;
+                    nearestPoint = position;
+                }
+            }
+            
+            if (nearestPoint) {
+                displayPhotos(nearestPoint);
+                
+                // マップの中心を移動
+                const [lat, lng] = nearestPoint.split(',').map(Number);
+                map.setView([lat, lng], map.getZoom());
+            } else {
+                // 近くにポイントがない場合
+                photoGallery.innerHTML = 
+                    `<div class="no-photos">この位置には写真がありません（${clickedLat.toFixed(6)}, ${clickedLng.toFixed(6)}）</div>`;
+                currentLocationKey = null;
+            }
+        }
+
+        // 2点間の距離をキロメートルで計算（ヒュベニの公式）
+        function getDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // 地球の半径（km）
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = 
+                Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        // 位置ごとに写真データをグループ化する - 改良版
+        function groupPhotosByLocation(photos) {
+            const locationMap = {};
+            
+            // 1. 最初に元の座標でポイントを仮グループ化
+            photos.forEach(photo => {
+                if (photo.latitude && photo.longitude) {
+                    // 少数第5位までで丸める（約1.1m程度の精度）
+                    const roundedLat = Math.round(photo.latitude * 100000) / 100000;
+                    const roundedLng = Math.round(photo.longitude * 100000) / 100000;
+                    const locationKey = `${roundedLat},${roundedLng}`;
+                    
+                    if (!locationMap[locationKey]) {
+                        locationMap[locationKey] = [];
+                    }
+                    
+                    locationMap[locationKey].push(photo);
+                }
+            });
+            
+            // 2. ポイントをさらにクラスタリング
+            const clusterMap = {};
+            const processedPoints = new Set();
+            
+            // まず各ポイントについて
+            Object.keys(locationMap).forEach(locationKey => {
+                // 既に処理済みのポイントはスキップ
+                if (processedPoints.has(locationKey)) return;
+                
+                const [lat, lng] = locationKey.split(',').map(Number);
+                const pointPhotos = locationMap[locationKey];
+                let clusterPhotos = [...pointPhotos];
+                
+                // 近くのポイントを探して結合
+                Object.keys(locationMap).forEach(otherKey => {
+                    if (otherKey === locationKey || processedPoints.has(otherKey)) return;
+                    
+                    const [otherLat, otherLng] = otherKey.split(',').map(Number);
+                    const distance = getDistance(lat, lng, otherLat, otherLng);
+                    
+                    // 指定半径内のポイントをクラスタリング
+                    if (distance <= CLUSTERING_RADIUS) {
+                        clusterPhotos = [...clusterPhotos, ...locationMap[otherKey]];
+                        processedPoints.add(otherKey);
+                    }
+                });
+                
+                // このポイントも処理済みとしてマーク
+                processedPoints.add(locationKey);
+                
+                // クラスタの中心点を計算（写真の位置の平均）
+                if (clusterPhotos.length > 0) {
+                    let sumLat = 0, sumLng = 0;
+                    clusterPhotos.forEach(photo => {
+                        sumLat += photo.latitude;
+                        sumLng += photo.longitude;
+                    });
+                    
+                    const centerLat = sumLat / clusterPhotos.length;
+                    const centerLng = sumLng / clusterPhotos.length;
+                    const clusterKey = `${centerLat.toFixed(5)},${centerLng.toFixed(5)}`;
+                    
+                    clusterMap[clusterKey] = clusterPhotos;
+                }
+            });
+            
+            return clusterMap;
+        }
+
+        // マーカーを地図に追加する - 改良版
+        function addMarkersToMap() {
+            // 既存のマーカーをクリア
+            for (const key in markers) {
+                map.removeLayer(markers[key]);
+            }
+            markers = {};
+            
+            // 新しいマーカーを追加
+            for (const position in photoLocations) {
+                const photos = photoLocations[position];
+                const [lat, lng] = position.split(',').map(Number);
+                
+                // 写真の数に基づくマーカーサイズ設定
+                const scaleFactor = Math.min(2, 1 + Math.log10(photos.length) / 2);
+                const markerSize = Math.round(16 * scaleFactor);
+                
+                // カスタムアイコンを作成（写真の数が多いほど大きく）
+                const customIcon = L.divIcon({
+                    html: `<div style="background-color: rgba(0, 120, 255, 0.7); width: ${markerSize}px; height: ${markerSize}px; border-radius: 50%; border: 2px solid white; display: flex; justify-content: center; align-items: center; font-size: ${photos.length > 9 ? '10px' : '12px'}; color: white; font-weight: bold;">${photos.length > 99 ? '99+' : photos.length}</div>`,
+                    className: 'cluster-marker',
+                    iconSize: [markerSize, markerSize],
+                    iconAnchor: [markerSize/2, markerSize/2]
+                });
+                
+                const marker = L.marker([lat, lng], {
+                    icon: customIcon
+                }).addTo(map);
+                
+                // ポップアップコンテンツを作成
+                const popupContent = `
+                    <div style="text-align: center;">
+                        <strong>${photos.length}枚の写真</strong><br>
+                        <small>${formatDateTime(new Date(photos[0].dateTime))} - ${formatDateTime(new Date(photos[photos.length-1].dateTime))}</small>
+                    </div>
+                `;
+                
+                marker.bindPopup(popupContent);
+                
+                marker.on('click', function() {
+                    displayPhotos(position);
+                });
+                
+                markers[position] = marker;
+            }
+        }
+
+        // 指定された位置の写真を表示する
+        function displayPhotos(position) {
+            const photos = photoLocations[position];
+            
+            if (!photos || photos.length === 0) {
+                photoGallery.innerHTML = '<div class="no-photos">この場所には写真がありません</div>';
+                currentLocationKey = null;
+                return;
+            }
+            
+            // 写真を日付順に並べ替え
+            const sortedPhotos = [...photos].sort((a, b) => {
+                const dateA = new Date(a.dateTime);
+                const dateB = new Date(b.dateTime);
+                return dateA - dateB;
+            });
+            
+            let galleryHTML = '';
+            sortedPhotos.forEach((photo, index) => {
+                const date = new Date(photo.dateTime);
+                const formattedDate = formatDateTime(date);
+                
+                // ファイルパスから画像を表示するか、アップロード済みの画像から表示
+                let imageSrc;
+                const fileName = photo.fileName;
+                
+                if (imageFiles[fileName]) {
+                    // ユーザーがアップロードした画像がある場合
+                    imageSrc = URL.createObjectURL(imageFiles[fileName]);
+                } else if (photo.filePath) {
+                    // ファイルパスが指定されている場合
+                    imageSrc = photo.filePath;
+                } else {
+                    // それ以外の場合はプレースホルダー
+                    imageSrc = `/api/placeholder/300/200`;
+                }
+                
+                galleryHTML += `
+                    <div class="photo-container">
+                        <img class="photo" src="${imageSrc}" alt="${photo.fileName}" 
+                             data-index="${index}" data-position="${position}" title="${photo.fileName}">
+                        <div class="photo-date">${formattedDate}</div>
+                    </div>
+                `;
+            });
+            
+            photoGallery.innerHTML = galleryHTML;
+            
+            // 写真クリックイベントを追加
+            const photoElements = photoGallery.querySelectorAll('.photo');
+            photoElements.forEach(photo => {
+                photo.addEventListener('click', openPhotoPreview);
+            });
+            
+            // すべてのマーカーの色をリセット
+            for (const pos in markers) {
+                const photos = photoLocations[pos];
+                const scaleFactor = Math.min(2, 1 + Math.log10(photos.length) / 2);
+                const markerSize = Math.round(16 * scaleFactor);
+                
+                const normalIcon = L.divIcon({
+                    html: `<div style="background-color: rgba(0, 120, 255, 0.7); width: ${markerSize}px; height: ${markerSize}px; border-radius: 50%; border: 2px solid white; display: flex; justify-content: center; align-items: center; font-size: ${photos.length > 9 ? '10px' : '12px'}; color: white; font-weight: bold;">${photos.length > 99 ? '99+' : photos.length}</div>`,
+                    className: 'cluster-marker',
+                    iconSize: [markerSize, markerSize],
+                    iconAnchor: [markerSize/2, markerSize/2]
+                });
+                
+                markers[pos].setIcon(normalIcon);
+            }
+            
+            // 選択されたマーカーをハイライト
+            const selectedPhotos = photoLocations[position];
+            const scaleFactor = Math.min(2, 1 + Math.log10(selectedPhotos.length) / 2);
+            const markerSize = Math.round(16 * scaleFactor);
+            
+            const highlightIcon = L.divIcon({
+                html: `<div style="background-color: red; width: ${markerSize}px; height: ${markerSize}px; border-radius: 50%; border: 2px solid white; display: flex; justify-content: center; align-items: center; font-size: ${selectedPhotos.length > 9 ? '10px' : '12px'}; color: white; font-weight: bold;">${selectedPhotos.length > 99 ? '99+' : selectedPhotos.length}</div>`,
+                className: 'cluster-marker',
+                iconSize: [markerSize, markerSize],
+                iconAnchor: [markerSize/2, markerSize/2]
+            });
+            
+            markers[position].setIcon(highlightIcon);
+            currentLocationKey = position;
+        }
+
+        // 写真プレビューを開く
+        function openPhotoPreview() {
+            const index = parseInt(this.dataset.index);
+            const position = this.dataset.position;
+            const photos = photoLocations[position];
+            const photo = photos[index];
+            
+            // 画像ソースを設定
+            if (imageFiles[photo.fileName]) {
+                // ユーザーがアップロードした画像がある場合
+                photoPreviewImage.src = URL.createObjectURL(imageFiles[photo.fileName]);
+            } else if (photo.filePath) {
+                // ファイルパスが指定されている場合
+                photoPreviewImage.src = photo.filePath;
+            } else {
+                // それ以外の場合はプレースホルダー
+                photoPreviewImage.src = `/api/placeholder/800/600`;
+            }
+            
+            // 写真情報を表示
+            let infoHTML = `
+                <h3>${photo.fileName}</h3>
+                <p>撮影日時: ${formatDateTime(new Date(photo.dateTime))}</p>
+                <p>位置情報: ${photo.latitude.toFixed(6)}, ${photo.longitude.toFixed(6)}</p>
+            `;
+            
+            photoPreviewInfo.innerHTML = infoHTML;
+            photoPreviewModal.style.display = 'block';
+        }
+
+        // プレビューモーダルを閉じる
+        photoPreviewClose.addEventListener('click', function() {
+            photoPreviewModal.style.display = 'none';
+        });
+
+        // モーダルの外側をクリックしても閉じる
+        window.addEventListener('click', function(event) {
+            if (event.target == photoPreviewModal) {
+                photoPreviewModal.style.display = 'none';
+            }
+        });
+
+        // JSONファイル読み込み処理
+        jsonFileInput.addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                
+                reader.onload = function(e) {
+                    try {
+                        const json = JSON.parse(e.target.result);
+                        processPhotoDatabase(json);
+                    } catch (error) {
+                        setStatusMessage('JSONファイルの解析に失敗しました: ' + error.message, 'error');
+                    }
+                };
+                
+                reader.onerror = function() {
+                    setStatusMessage('ファイルの読み込みに失敗しました', 'error');
+                };
+                
+                reader.readAsText(file);
+            }
+        });
+
+        // 画像フォルダ読み込み処理
+        imageFolderInput.addEventListener('change', function(event) {
+            const files = event.target.files;
+            
+            if (files.length > 0) {
+                // 画像ファイルのみをフィルタリング
+                const imageFilesArray = Array.from(files).filter(file => {
+                    const fileType = file.type.toLowerCase();
+                    return fileType.startsWith('image/');
+                });
+                
+                if (imageFilesArray.length === 0) {
+                    setImageStatusMessage('画像ファイルが見つかりませんでした', 'error');
+                    return;
+                }
+                
+                // 画像ファイルをファイル名でインデックス化
+                imageFilesArray.forEach(file => {
+                    const fileName = file.name;
+                    imageFiles[fileName] = file;
+                });
+                
+                setImageStatusMessage(`${imageFilesArray.length}枚の画像をロードしました`, 'success');
+                
+                // 現在表示中の写真がある場合は、画像URLを更新
+                if (currentLocationKey) {
+                    displayPhotos(currentLocationKey);
+                }
+            }
+        });
+
+        // 設定の適用
+        applySettingsButton.addEventListener('click', function() {
+            const newRadius = parseFloat(clusteringRadiusInput.value);
+            
+            if (isNaN(newRadius) || newRadius <= 0) {
+                alert('有効なクラスタリング半径を入力してください');
+                return;
+            }
+            
+            CLUSTERING_RADIUS = newRadius;
+            
+            if (photoData.length > 0) {
+                // 写真データを再クラスタリング
+                photoLocations = groupPhotosByLocation(photoData);
+                addMarkersToMap();
+                
+                // 地図の範囲を調整
+                fitMapToBounds();
+                
+                setStatusMessage(`クラスタリング半径を${CLUSTERING_RADIUS}kmに更新し、${Object.keys(photoLocations).length}個のクラスタを作成しました`, 'success');
+                
+                // 現在選択中のロケーションをリセット（クラスタリングにより変わる可能性があるため）
+                currentLocationKey = null;
+                photoGallery.innerHTML = '<div class="no-photos">位置をクリックして写真を表示</div>';
+            }
+        });
+
+        // 写真データベースを処理する
+        function processPhotoDatabase(data) {
+            try {
+                // データを検証
+                if (!Array.isArray(data)) {
+                    throw new Error('データが配列形式ではありません');
+                }
+                
+                // 必要なプロパティを持つ有効なデータのみをフィルタリング
+                photoData = data.filter(item => 
+                    item.latitude != null && 
+                    item.longitude != null && 
+                    item.dateTime != null &&
+                    item.fileName
+                );
+                
+                if (photoData.length === 0) {
+                    throw new Error('有効な写真データが見つかりませんでした');
+                }
+                
+                // ファイルを処理する（JSONから読み込んだ場合のみ）
+                if (jsonFileInput.files && jsonFileInput.files.length > 0) {
+                    // 選択されたJSONファイルの親ディレクトリを基準にする
+                    const jsonFile = jsonFileInput.files[0];
+                    const jsonPath = jsonFile.webkitRelativePath || '';
+                    const basePath = jsonPath.split('/').slice(0, -1).join('/');
+                    
+                    // 各写真のファイルパスを修正
+                    photoData.forEach(photo => {
+                        if (photo.filePath) {
+                            // 基準パスとファイルパスを結合
+                            photo.filePath = basePath ? `${basePath}/${photo.filePath.split('/').pop()}` : photo.filePath;
+                        }
+                    });
+                }
+                
+                // 位置ごとにグループ化
+                photoLocations = groupPhotosByLocation(photoData);
+                
+                // マーカーを追加
+                addMarkersToMap();
+                
+                // 地図の範囲を調整
+                fitMapToBounds();
+                
+                // 情報表示
+                setStatusMessage(`${photoData.length}枚の写真をロードしました（${Object.keys(photoLocations).length}ヶ所）`, 'success');
+                showDatabaseInfo();
+                
+                // 初期の場所（最初の写真の場所）を表示
+                const firstLocation = Object.keys(photoLocations)[0];
+                if (firstLocation) {
+                    displayPhotos(firstLocation);
+                    const [lat, lng] = firstLocation.split(',').map(Number);
+                    map.setView([lat, lng], 17);
+                }
+            } catch (error) {
+                setStatusMessage('データベースの処理に失敗しました: ' + error.message, 'error');
+            }
+        }
+
+        // 地図の表示範囲を調整
+        function fitMapToBounds() {
+            if (Object.keys(photoLocations).length > 0) {
+                const latLngs = Object.keys(photoLocations).map(pos => {
+                    const [lat, lng] = pos.split(',').map(Number);
+                    return L.latLng(lat, lng);
+                });
+                
+                const bounds = L.latLngBounds(latLngs);
+                map.fitBounds(bounds, { padding: [50, 50] });
+            }
+        }
+
+        // ステータスメッセージを設定
+        function setStatusMessage(message, type) {
+            statusMessage.textContent = message;
+            statusMessage.className = 'status-message ' + (type === 'error' ? 'status-error' : 'status-success');
+        }
+
+        // 画像ステータスメッセージを設定
+        function setImageStatusMessage(message, type) {
+            imageStatus.textContent = message;
+            imageStatus.className = 'status-message ' + (type === 'error' ? 'status-error' : 'status-success');
+        }
+
+        // データベース情報を表示
+        function showDatabaseInfo() {
+            if (photoData.length > 0) {
+                // 日付の範囲を取得
+                const dates = photoData.map(p => new Date(p.dateTime));
+                const minDate = new Date(Math.min(...dates));
+                const maxDate = new Date(Math.max(...dates));
+                
+                databaseInfo.innerHTML = `
+                    <div>撮影期間: ${formatDateTime(minDate)} - ${formatDateTime(maxDate)}</div>
+                    <div>撮影場所: ${Object.keys(photoLocations).length}ヶ所</div>
+                `;
+            } else {
+                databaseInfo.innerHTML = '';
+            }
+        }
+
+        // 日付フォーマット
+        function formatDateTime(date) {
+            if (!date || isNaN(date)) return 'N/A';
+            
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            
+            return `${year}/${month}/${day} ${hours}:${minutes}`;
+        }
+
+        // 初期化
+        initMap();
+
+        // photo-database.jsonが既に存在する場合自動ロード
+        window.addEventListener('DOMContentLoaded', async function() {
+            try {
+                // ファイルシステムAPIを使用してJSONを読み込む
+                const fileContent = await window.fs.readFile('photo-database.json', { encoding: 'utf8' });
+                const data = JSON.parse(fileContent);
+                
+                // 画像ファイルのパス修正（相対パスを適切に設定）
+                data.forEach(photo => {
+                    if (photo.filePath) {
+                        // filePath が相対パスの場合、適切なURLに変換
+                        // この例では、同じディレクトリにあると仮定
+                        if (!photo.filePath.startsWith('http') && !photo.filePath.startsWith('/')) {
+                            photo.filePath = './' + photo.filePath;
+                        }
+                    }
+                });
+                
+                processPhotoDatabase(data);
+                setStatusMessage('photo-database.jsonを自動的にロードしました', 'success');
+            } catch (error) {
+                console.log('自動ロードに失敗しました。JSONファイルを選択してください:', error);
+            }
+        });
+    </script>
+</body>
+</html>
